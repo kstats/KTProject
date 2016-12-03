@@ -24,11 +24,14 @@ class KDD(Dataset):
   def _preload(self):
     with open(self.file_path, 'r') as f_in:
       csv_reader = csv.DictReader(f_in, delimiter='\t')
+      count = 0
       for row in csv_reader:
-        if len(row) != 19:
+        #if len(row) != 19:
+        if count == 0:
           print(row)
         else:
           self.append(row)
+        count+=1
 
   def _display_single_item(self, item):
     print(item)
