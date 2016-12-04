@@ -1,2 +1,5 @@
 KTProject.sublime-project
 KTProject.sublime-workspace
+*.pyc
+*.zip
+lr
