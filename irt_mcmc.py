@@ -20,7 +20,7 @@ class IRT(object):
     self.init_params()
 
   def init_params(self):
-    self.proposal_width, self.init_width = 1.0, 1.0
+    self.proposal_width, self.init_width = 0.001, 1.0
     self.kcs = {v: i for i, v in enumerate(self.dataset.kcs)}
     for v in self.testset.kcs:
       if not v in self.kcs:
@@ -47,32 +47,35 @@ class IRT(object):
       self.X[ite, self.num_mat + pro_index] = 1.0
       self.Y[ite] = int(item[KDD.CORRECT])
 
-  def posterior(self, theta):
-    prod = self.X.dot(theta)
-    prob = np.exp(np.sum(prod*self.Y - np.log(1.0+np.exp(prod)))) * np.prod(norm(self.mu_0, self.init_width).pdf(theta))
-    return prob
+  def posterior_ratio(self, theta_cur, theta_prev):
+    prod_1 = self.X.dot(theta_cur)
+    prod_2 = self.X.dot(theta_prev)
+
+    l_data = np.exp(np.sum((prod_1-prod_2)*self.Y - np.log((1.0+np.exp(prod_1)) / (1.0 + np.exp(prod_2)))))
+    l_tran = np.prod(norm(self.mu_0, self.init_width).pdf(theta_cur) / norm(self.mu_0, self.init_width).pdf(theta_prev))
+
+    return l_data * l_tran
 
   def mcmc(self):
     theta = norm(self.mu_0, self.init_width).rvs()
-    prev = self.posterior(theta)
-    BURN_IN, NUM_PROPOSAL = 1000, 100
+    BURN_IN, NUM_PROPOSAL = 500, 100
     counter = 0
     for _ in tqdm(range(BURN_IN)):
       proposal = norm(theta, self.proposal_width).rvs()
-      post = self.posterior(proposal)
-      if np.random.rand() < post / prev:
+      ratio = self.posterior_ratio(proposal, theta)
+      if np.random.rand() < ratio:
         theta = proposal
-        prev = post
         counter += 1
     print('Efficiency: {}'.format(float(counter) / float(BURN_IN)))
     proposals = []
-    while len(proposals) != NUM_PROPOSAL:
+    for _ in tqdm(range(NUM_PROPOSAL * 10)):
+      if len(proposals) == NUM_PROPOSAL:
+        break
       proposal = norm(theta, self.proposal_width).rvs()
-      post = self.posterior(proposal)
-      if np.random.rand() < post / prev:
+      ratio = self.posterior_ratio(proposal, theta)
+      if np.random.rand() < ratio:
         proposals.append(proposal)
         theta = proposal
-        prev = post
     proposals = np.vstack(proposals)
     self.XX = lil_matrix((len(self.testset), self.num_mat+self.num_pro))
     for ite, item in tqdm(enumerate(self.testset)):
@@ -81,7 +84,7 @@ class IRT(object):
       self.XX[ite, self.num_mat + pro_index] = 1.0
     YY = 1.0 - 1.0 / (1.0 + np.exp(self.XX.dot(proposals.transpose())))
     YY = np.average(YY, axis=1)
-    with open('submission1.txt', 'w') as f_out:
+    with open('submission3.txt', 'w') as f_out:
       f_out.write('Row\tCorrect First Attempt')
       for idx in range(len(self.testset)):
         f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], YY[idx]))
@@ -93,7 +96,7 @@ class IRT(object):
     model.fit(self.X, self.Y)
     print('Evaluating...')
     prob = model.predict_proba(self.XX)
-    with open('submission2.txt', 'w') as f_out:
+    with open('submission4.txt', 'w') as f_out:
       f_out.write('Row\tCorrect First Attempt')
       for idx in range(len(self.testset)):
         f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], prob[idx][1]))
@@ -106,8 +109,8 @@ class IRT(object):
     return stu_index, pro_index, kcs_index
 
 def main():
-  dataset = KDD('../kddcup_challenge/algebra_2008_2009_train.txt')
-  testset = KDD('../kddcup_challenge/algebra_2008_2009_test.txt')
+  dataset = KDD('../kddcup_challenge/bridge_to_algebra_2008_2009_train.txt')
+  testset = KDD('../kddcup_challenge/bridge_to_algebra_2008_2009_test.txt')
   # dataset = KDD('../bridge_to_algebra_2006_2007/bridge_to_algebra_2006_2007_train.txt')
   # testset = KDD('../bridge_to_algebra_2006_2007/bridge_to_algebra_2006_2007_test.txt')
   dataset.print_meta_data()
@@ -118,8 +121,8 @@ def main():
 
   pr_1 = p_1 > 0.5
   pr_2 = np.array([item[1] > 0.5 for item in p_2])
-  p2 = np.array([item[1] for item in p2])
-  print(np.average((p_1 - p2)**2))
+  p_2 = np.array([item[1] for item in p_2])
+  print(np.average((p_1 - p_2)**2))
   print(np.sum(pr_1 == pr_2) / len(pr_1))
   # irt.optimize(1e-3)
   # irt.eval()
