@@ -29,11 +29,7 @@ class KDD(Dataset):
   CORRECT = 3
   ROW = 4
   def _preload(self):
-    with open('concept_map.json', 'r') as f_in:
-      self.concept_map = json.load(f_in)
-    self.kcs = {v for _, v in self.concept_map.items()}
-
-    self.students, self.problems = set(), set()
+    self.students, self.problems, self.kcs = set(), set(), set()
     with open(self.file_path, 'r') as f_in:
       csv_reader = csv.DictReader(f_in, delimiter='\t')
       # counter = 0
@@ -43,12 +39,14 @@ class KDD(Dataset):
         #   break
         self.students.add(row['Anon Student Id'])
         self.problems.add(row['Problem Name'] + "#" + row['Step Name'])
+        for c in row['KC(SubSkills)'].split('~~'):
+          self.kcs.add(c)
         # self.problems.add(row['Step Name'])
         self.append([
           row['Anon Student Id'],
           row['Problem Name']+"#"+row['Step Name'],
           # row['Step Name'],
-          [self.concept_map[c] if c in self.concept_map else np.random.choice(list(self.kcs)) for c in row['KC(SubSkills)'].split('~~')],
+          row['KC(SubSkills)'].split('~~'),
           row['Correct First Attempt'],
           row['Row']
         ])

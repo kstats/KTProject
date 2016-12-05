@@ -22,15 +22,15 @@ class Dataset(list):
 
 class KDD(Dataset):
   def _preload(self):
+    with open('concept_map.json', 'r') as f_in:
+      self.concept_map = json.load(f_in)
+
     with open(self.file_path, 'r') as f_in:
       csv_reader = csv.DictReader(f_in, delimiter='\t')
       count = 0
       for row in csv_reader:
-        #if len(row) != 19:
-        if count == 0:
-          print(row)
-        else:
-          self.append(row)
+        row['KC(SubSkills)'] = '~~'.join([self.concept_map[c] if c in self.concept_map else np.random.choice(list(self.kcs)) for c in row['KC(SubSkills)'].split('~~')])
+        self.append(row)
         count+=1
 
   def _display_single_item(self, item):

@@ -103,7 +103,7 @@ class IRT(object):
     model.fit(self.X, self.Y)
     print('Evaluating...')
     prob = model.predict_proba(self.XX)
-    with open('submission2.txt', 'w') as f_out:
+    with open('submission1.txt', 'w') as f_out:
       f_out.write('Row\tCorrect First Attempt')
       for idx in range(len(self.testset)):
         f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], prob[idx][1]))
