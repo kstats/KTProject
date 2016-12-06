@@ -4,8 +4,13 @@ import numpy as np
 from tqdm import tqdm
 from scipy.sparse import lil_matrix
 from sklearn.linear_model import LogisticRegression
+import pickle
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.manifold import TSNE
+import pandas as pd
 
-from util.data_reader_a import KDD
+from util.data_reader import KDD
 from scipy.stats import norm
 
 TOTAL_EPOCHS = 10
@@ -61,17 +66,57 @@ class IRT(object):
 
     return l_data # * l_tran
 
+  def _log_loss(self, theta):
+    prod = self.X.dot(theta.transpose())
+    return np.average(prod*self.Y.reshape((-1,1)).repeat(theta.shape[0], axis=1) - np.log(1.0+np.exp(prod)), axis=0)
+
+  def _visualization(self):
+    proposal_loss = self._log_loss(np.vstack(self.sample_list))
+    fig, ax = plt.subplots()
+    ind = np.arange(len(proposal_loss))
+    # plt.scatter(ind, proposal_loss, color=['g' if x else 'b' for x in self.accept_list])
+    plt.plot(ind, proposal_loss)
+    plt.savefig('results/loss_proposal.png')
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    self.sample_list = np.vstack(self.sample_list)
+    i1 = np.random.randint(self.sample_list.shape[1])
+    i2 = np.random.randint(self.sample_list.shape[1])
+    plt.scatter(self.sample_list[:,i1], self.sample_list[:,i2])
+    plt.plot(self.sample_list[:,i1], self.sample_list[:,i2])
+    plt.savefig('results/path_on_{}_{}.png'.format(i1, i2))
+    plt.close(fig)
+
+    model = TSNE(n_components=2, random_state=0)
+    XX = model.fit_transform(self.sample_list)
+    df = pd.DataFrame(dict(d1=XX[:,0], d2=XX[:,1]))
+    fig, ax = plt.subplots()
+    # plt.scatter(XX[:,0], XX[:,1])
+    # plt.plot(XX[:,0], XX[:,1])
+    sns.jointplot('d1', 'd2', data=df)
+    plt.savefig('results/t-SNE_feature.png')
+    plt.close(fig)
+
   def mcmc(self, init_theta):
     self.init_theta = init_theta
     theta = norm(self.init_theta, self.init_width).rvs()
-    BURN_IN, NUM_PROPOSAL, INTERVAL = 20, 10, 20
+    self.sample_list = [theta]
+    # self.proposal_list = [theta]
+    # self.accept_list = [True]
+    BURN_IN, NUM_PROPOSAL, INTERVAL = 50, 10, 2
     counter = 0
     for _ in tqdm(range(BURN_IN)):
       proposal = norm(theta, self.proposal_width).rvs()
+      # self.proposal_list.append(proposal)
       ratio = self.posterior_ratio(proposal, theta)
+      # accept = False
       if np.random.rand() < ratio:
         theta = proposal
         counter += 1
+        self.sample_list.append(proposal)
+        # accept = True
+      # self.accept_list.append(accept)
     print('Efficiency: {}'.format(float(counter) / float(BURN_IN)))
 
     proposals = []
@@ -80,21 +125,35 @@ class IRT(object):
       if len(proposals) == NUM_PROPOSAL:
         break
       proposal = norm(theta, self.proposal_width).rvs()
+      # self.proposal_list.append(proposal)
       ratio = self.posterior_ratio(proposal, theta)
+      # accept = False
       if np.random.rand() < ratio:
         if counter == INTERVAL:
           proposals.append(proposal)
           counter = 0
         else:
           counter += 1
+        self.sample_list.append(proposal)
+        # accept = True
         theta = proposal
+      # self.accept_list.append(accept)
     proposals = np.vstack(proposals)
     YY = 1.0 - 1.0 / (1.0 + np.exp(self.XX.dot(proposals.transpose())))
     YY = np.average(YY, axis=1)
-    with open('submission1.txt', 'w') as f_out:
+    with open('results/submission1.txt', 'w') as f_out:
       f_out.write('Row\tCorrect First Attempt')
       for idx in range(len(self.testset)):
         f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], YY[idx]))
+
+    # with open('results/proposals.pkl', 'wb') as f_out:
+    #   pickle.dump(self.proposal_list, f_out)
+    # with open('results/accept.pkl', 'wb') as f_out:
+    #   pickle.dump(self.accept_list, f_out)
+    with open('results/samples.pkl', 'wb') as f_out:
+      pickle.dump(self.sample_list, f_out)
+
+    self._visualization()
     return YY
 
   def optimize_scipy(self):
@@ -103,10 +162,11 @@ class IRT(object):
     model.fit(self.X, self.Y)
     print('Evaluating...')
     prob = model.predict_proba(self.XX)
-    with open('submission2.txt', 'w') as f_out:
+    with open('results/submission2.txt', 'w') as f_out:
       f_out.write('Row\tCorrect First Attempt')
       for idx in range(len(self.testset)):
-        f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], prob[idx][1]))
+        p = prob[idx][1]
+        f_out.write('\n{}\t{}'.format(self.testset[idx][KDD.ROW], p if p < 0.9 else 1.0))
     return prob, model.coef_
 
   def _indexes(self, data_item):
@@ -124,13 +184,13 @@ def main():
   dataset.print_example()
   irt = IRT(dataset, testset)
   p_2, coeff = irt.optimize_scipy()
-  p_1 = irt.mcmc(coeff.reshape((-1,)))
+  # p_1 = irt.mcmc(coeff.reshape((-1,)))
 
-  pr_1 = p_1 > 0.5
-  p_2 = np.array([item[1] for item in p_2])
-  pr_2 = p_2 > 0.5
-  print('Accuracy: {}'.format(np.sum(pr_1 == pr_2) / float(len(pr_1))))
-  print('MSE: {}'.format(np.average((p_1 - p_2)**2)))
+  # pr_1 = p_1 > 0.5
+  # p_2 = np.array([item[1] for item in p_2])
+  # pr_2 = p_2 > 0.5
+  # print('Accuracy: {}'.format(np.sum(pr_1 == pr_2) / float(len(pr_1))))
+  # print('MSE: {}'.format(np.average((p_1 - p_2)**2)))
   # irt.optimize(1e-3)
   # irt.eval()
 
