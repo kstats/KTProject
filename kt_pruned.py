@@ -30,6 +30,7 @@ for item in tqdm(kdd):
     #randomly chooses an item to be the concept
     item['KC(SubSkills)'] = random.choice(list_of_skills)
 
+#kdd = kdd[:(int(len(kdd) / 10))]
 print "done with loop"
 #this is the number of unique students that are found in the dataset
 num_students = len(students.keys())
@@ -79,13 +80,14 @@ def forward_pass():
 delta_message = np.ones((num_students, num_skills, 2))
 E_stored = np.ones((num_students, num_skills,)) * -1
 E_end = np.zeros((num_students, num_skills,))
-model_learning_rate = 1e-3
+model_learning_rate = 10.0
 def backward_pass():
-    global prob_learn_s, prob_learn_c
+    global prob_learn_s, prob_learn_c, q
     count = N-1
     kdd.reverse()
     grad_learn_s = np.zeros(prob_learn_s.shape)
     grad_learn_c = np.zeros(prob_learn_c.shape)
+    grad_learn_q = np.zeros(q.shape)
     for item in tqdm(kdd):
         y = item['Correct First Attempt']
         concept = skills[item['KC(SubSkills)']]
@@ -103,15 +105,34 @@ def backward_pass():
             E_end[student, concept] = e_zi
         prev_ezi = E_stored[student, concept]
         E_stored[student, concept] = e_zi
-        m_step(e_zi, y, student, concept, prev_ezi, grad_learn_s, grad_learn_c)
+        m_step(e_zi, y, student, concept, prev_ezi, grad_learn_s, grad_learn_c, grad_learn_q)
         count -= 1
-    prob_learn_s += model_learning_rate * grad_learn_s
-    prob_learn_s[prob_learn_s>1.0] = 1.0
-    prob_learn_c += model_learning_rate * grad_learn_c
-    prob_learn_c[prob_learn_c>1.0] = 1.0
+    prob_learn_s += model_learning_rate * grad_learn_s / float(N)
+    print "Student learning rate"
+    print np.max(grad_learn_s / float(N))
+    print np.min(grad_learn_s / float(N))
+    print np.average(grad_learn_s / float(N))
 
-def m_step(e_zi, y, student, concept, prev_ezi, gs, gc):
-    q[concept] += model_learning_rate * (float(y) - np.exp(e_zi + q[concept]) / (1 + np.exp(e_zi + q[concept])))
+    prob_learn_s[prob_learn_s>1.0] = 1.0
+    prob_learn_s[prob_learn_s<0.0] = 0.0
+    prob_learn_c += model_learning_rate * grad_learn_c / float(N)
+    prob_learn_c[prob_learn_c>1.0] = 1.0
+    prob_learn_c[prob_learn_c<0.0] = 0.0
+    print "Concept learning rate"
+    print np.max(grad_learn_c / float(N))
+    print np.min(grad_learn_c / float(N))
+    print np.average(grad_learn_c / float(N))
+
+    q += model_learning_rate * grad_learn_q / float(N)
+    print "Difficulty"
+    print np.max(grad_learn_q / float(N))
+    print np.min(grad_learn_q / float(N))
+    print np.average(grad_learn_q / float(N))
+
+
+
+def m_step(e_zi, y, student, concept, prev_ezi, gs, gc, gq):
+    gq[concept] += model_learning_rate * (float(y) - np.exp(e_zi + q[concept]) / (1 + np.exp(e_zi + q[concept])))
     if prev_ezi > 0:
         lr = prob_learn_s[student] * prob_learn_c[concept]
         l = e_zi * prev_ezi + (1-e_zi) * prev_ezi * lr + (1-e_zi) * (1-prev_ezi) * (1-lr)
@@ -125,10 +146,11 @@ def m_step(e_zi, y, student, concept, prev_ezi, gs, gc):
         gc[concept] += dlr * prob_learn_s[student]
 
 #Here is where we use alpha beta and EM to estimate these actual parameters
-print "doing forward pass now..."
-forward_pass()
-print "doing backward pass now..."
-backward_pass()
+for i in range(1):
+    print "doing forward pass now..."
+    forward_pass()
+    print "doing backward pass now..."
+    backward_pass()
 
 print "calculating percentages now..."
 correct = 0.
@@ -146,6 +168,9 @@ for item in kdd_test:
         student = students[student]
         pyi = 1.0 / (1.0 + np.exp(- E_end[student, concept] - q[concept]))
         lr = prob_learn_s[student] * prob_learn_c[concept]
+        if E_end[student, concept] > 1 or E_end[student, concept] < 0:
+            print E_end[student, concept]
+            print lr
         E_end[student, concept] += lr * (1 - E_end[student, concept])
         f.write('\n{}\t{}'.format(item['Row'], pyi))
     else:
