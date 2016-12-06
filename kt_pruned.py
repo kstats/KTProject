@@ -80,7 +80,7 @@ def forward_pass():
 delta_message = np.ones((num_students, num_skills, 2))
 E_stored = np.ones((num_students, num_skills,)) * -1
 E_end = np.zeros((num_students, num_skills,))
-model_learning_rate = 10.0
+model_learning_rate = 1.0
 def backward_pass():
     global prob_learn_s, prob_learn_c, q
     count = N-1
@@ -146,7 +146,7 @@ def m_step(e_zi, y, student, concept, prev_ezi, gs, gc, gq):
         gc[concept] += dlr * prob_learn_s[student]
 
 #Here is where we use alpha beta and EM to estimate these actual parameters
-for i in range(1):
+for i in range(3):
     print "doing forward pass now..."
     forward_pass()
     print "doing backward pass now..."
